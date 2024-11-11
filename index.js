@@ -25,48 +25,55 @@ app.get("/api/shoes", async (req, res) => {
 app.get("/api/shoes/paginated", async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10; // default to 10 items per page
-    const page = parseInt(req.query.page) || 1; // default to the first page
-    const filterCriteria = JSON.parse(req.headers.criteria || {});
+    const page = parseInt(req.query.page) || 1; // default to the first
 
     // Calculate how many items to skip
     const skip = (page - 1) * limit;
 
     // Build filter query based on filter criteria
     let filterQuery = {};
-    console.log("quer: ", filterCriteria.brand);
-    if (filterCriteria.brand && filterCriteria.brand !== "All Products") {
-      filterQuery.company = filterCriteria.brand; // Filter by brand if not 'all'
+    if (req.query.brand && req.query.brand !== "All Products") {
+      filterQuery.company = req.query.brand; // Filter by brand if not 'all'
     }
 
-    if (filterCriteria.category && filterCriteria.category !== "all") {
-      filterQuery.category = filterCriteria.category.toLowerCase();
+    if (req.query.category && req.query.category !== "all") {
+      filterQuery.category = req.query.category.toLowerCase();
     }
 
-    if (filterCriteria.color && filterCriteria.color !== "all") {
-      filterQuery.color = filterCriteria.color.toLowerCase();
+    if (req.query.color && req.query.color !== "all") {
+      filterQuery.color = req.query.color.toLowerCase();
+    }
+
+    // Add keyword search for title
+    if (req.query.keyword) {
+      const keyword = req.query.keyword;
+      filterQuery.title = { $regex: keyword, $options: "i" }; // Case-insensitive search on title
+    }
+
+    // Add price range filter in MongoDB
+    if (req.query.price && req.query.price !== "all") {
+      const slicedPrice = formatPrice(req.query.price); // formatPrice should return minRange and maxRange
+      console.log("sliced price: ", slicedPrice);
+
+      if (!isNaN(slicedPrice.minRange) && !isNaN(slicedPrice.maxRange)) {
+        filterQuery.newPrice = {
+          $gte: slicedPrice.minRange,
+          $lte: slicedPrice.maxRange,
+        };
+      } else if (!isNaN(slicedPrice.minRange)) {
+        filterQuery.newPrice = { $gte: slicedPrice.minRange }; // For ranges like "200 - above"
+      } else if (!isNaN(slicedPrice.maxRange)) {
+        filterQuery.newPrice = { $lte: slicedPrice.maxRange }; // For ranges like "up to 200"
+      } else {
+        return res.status(500).json({
+          success: false,
+          message: `Invalid price range value! ${req.query.price}. Please provide correct format, e.g. '$100 - 200'`,
+        });
+      }
     }
 
     let shoes = await Shoe.find(filterQuery).limit(limit).skip(skip);
     console.log("filterQuery: ", filterQuery);
-
-    if (filterCriteria.price && filterCriteria.price !== "all") {
-      //format the string from '$100 - 200' to '200' and also the range wheather we should set max range or min
-      const slicedPrice = formatPrice(filterCriteria.price);
-      console.log("sliced price: ", slicedPrice);
-      if (!isNaN(slicedPrice.maxRange) && !isNaN(slicedPrice.minRange)) {
-        shoes = shoes.filter((shoe) => {
-          const shoePrice = parseFloat(shoe.newPrice);
-          return (
-            !isNaN(shoePrice) &&
-            shoePrice <= slicedPrice.maxRange &&
-            shoePrice >= slicedPrice.minRange
-          );
-        });
-      }
-      // for option like '$100 - 200' we treat the value as max value and for option like '200 - above' we treated the value '200' as mean value
-    }
-
-    // Fetch the shoes with pagination
 
     // Optional: Get total count for pagination metadata (e.g., total pages)
     const totalItems = await Shoe.countDocuments(filterQuery);
@@ -81,7 +88,6 @@ app.get("/api/shoes/paginated", async (req, res) => {
         currentPage: page,
         totalPages,
         totalItems,
-        filterCriteria,
       },
     });
   } catch (error) {

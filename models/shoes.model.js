@@ -23,11 +23,11 @@ const shoesSchema = mongoose.Schema(
       required: false,
     },
     prevPrice: {
-      type: String,
+      type: Number,
       required: false,
     },
     newPrice: {
-      type: String,
+      type: Number,
       required: true,
     },
     company: {
